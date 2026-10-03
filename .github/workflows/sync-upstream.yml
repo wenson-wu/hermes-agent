@@ -1,0 +1,39 @@
+name: sync-upstream
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 每天 09:00 北京时间
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # 同步内容包含 .github/workflows 下的变更时，GITHUB_TOKEN 无 workflows 权限无法推送，
+          # 必须改用带 workflow 权限的 PAT（secret: SYNC_TOKEN）
+          token: ${{ secrets.SYNC_TOKEN }}
+      - name: sync upstream into github fork
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/NousResearch/hermes-agent.git
+          git fetch upstream
+          git checkout main
+          git reset --hard upstream/main
+          git checkout origin/main -- .github/workflows/sync-upstream.yml
+          git diff --cached --quiet || git commit -m "chore(ci): retain sync-upstream workflow [skip ci]"
+          git push origin main --force
+      - name: sync to codeup
+        env:
+          CODEUP_SSH_KEY: ${{ secrets.CODEUP_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CODEUP_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan xilingan-cn-shenzhen.devops.aliyuncs.com >> ~/.ssh/known_hosts 2>/dev/null || true
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git remote add codeup xilingan@xilingan-cn-shenzhen.devops.aliyuncs.com:codeup/wenson-wu/hermes-agent.git
+          git push codeup main --force
