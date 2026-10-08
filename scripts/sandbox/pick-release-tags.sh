@@ -25,7 +25,10 @@
 # empty matrix.
 #
 # Only vYYYY.M.D[.N] release tags are considered; the repo also carries
-# backup/* and one-off tags that are not releases.
+# backup/* and one-off tags that are not releases. A repository that has
+# shipped no stable release at all (e.g. a fork that only runs CI) falls back
+# to its vX.Y.Z+canary.TIMESTAMP CI builds -- still real, installable
+# snapshots of this repository.
 
 set -euo pipefail
 
@@ -71,6 +74,17 @@ mapfile -t tags < <(
     | grep -E '^v[0-9]{4}\.[0-9]+\.[0-9]+(\.[0-9]+)?$' \
     | sort -V
 )
+
+if [ "${#tags[@]}" -eq 0 ]; then
+  # No stable vYYYY.M.D releases here -- fall back to CI canary builds such
+  # as v0.21.4+canary.20261007T070234Z. The timestamp is fixed-width, so
+  # sorting on the +canary. field orders them chronologically.
+  mapfile -t tags < <(
+    git -C "$REPO" tag --list 'v*+canary.*' \
+      | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?\+canary\.[0-9]{8}T[0-9]{6}Z$' \
+      | sort -t '+' -k 2,2
+  )
+fi
 
 total="${#tags[@]}"
 if [ "$total" -eq 0 ]; then
