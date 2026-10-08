@@ -78,7 +78,7 @@ on:
     #
     # route: which combinations to run (same choices as dispatch). The
     # bundled routes require the matching bundle manifests, exactly like a
-    # manual dispatch â a source (non-bundle) release run passes route=all
+    # manual dispatch — a source (non-bundle) release run passes route=all
     # with empty manifests and gets the source install/update matrix only.
     inputs:
       release:
@@ -112,7 +112,7 @@ on:
         type: string
         default: ''
       exclude-ref:
-        description: 'Exact release tag to EXCLUDE from the sampled OLD baselines (e.g. the candidate itself â testing an update from it would be a no-change test).'
+        description: 'Exact release tag to EXCLUDE from the sampled OLD baselines (e.g. the candidate itself — testing an update from it would be a no-change test).'
         required: false
         type: string
         default: ''
@@ -197,7 +197,7 @@ jobs:
           # EXCLUDE_REF removes one tag from the sampled OLD baselines: on a
           # stable release the candidate tag itself is the newest release
           # tag, and sampling it as an OLD version would produce a no-change
-          # update leg â the candidate must never update from itself.
+          # update leg — the candidate must never update from itself.
           TAG_COUNT: ${{ github.event_name == 'pull_request' && '1' || inputs.tag-count || 2 }}
           INSTALL_REF: ${{ inputs.install-ref }}
           EXCLUDE_REF: ${{ inputs.exclude-ref }}
@@ -401,7 +401,7 @@ jobs:
 
   # Strict source-matrix gate (release runs). needs collapses each matrix to
   # one aggregate, so the three source parents are the required check here.
-  # Every source leg must succeed â a skip is a failure EXCEPT when it is the
+  # Every source leg must succeed — a skip is a failure EXCEPT when it is the
   # native, declared capability skip (a starting tag predating the desktop
   # app reports tag-has-desktop=false and its GUI leg legitimately cannot
   # run); those are honest skips, counted and listed. A no-legs-at-all
@@ -500,7 +500,7 @@ jobs:
             echo
             # The tag annotations let the chart say WHY a cell skipped
             # (pre-desktop vs declared TODO) instead of a flat "skip".
-            echo 'Legend: â upgrade passed Â· known [n] = exact historical failure, see footnote Â· â unexpected failure Â· pre-desktop / TODO = why a leg skipped Â· ð¼ opens the leg player (recording + synced logs)'
+            echo 'Legend: ✅ upgrade passed · known [n] = exact historical failure, see footnote · ❌ unexpected failure · pre-desktop / TODO = why a leg skipped · 📼 opens the leg player (recording + synced logs)'
             echo
             node scripts/sandbox/generate-e2e-matrix.mjs --format results \
               --tags '${{ needs.pick-releases.outputs.tags }}' \
