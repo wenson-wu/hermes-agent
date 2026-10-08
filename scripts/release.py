@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -89,17 +90,28 @@ def dispatch_desktop_build(tag: str, gh_repo: str | None) -> bool:
     dispatch_ref = (_default_branch(gh_repo) or "main") if canary else tag
     cmd[cmd.index("--ref") + 1] = dispatch_ref
 
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, encoding="utf-8",
-        errors="replace", cwd=str(REPO_ROOT),
-    )
-    if result.returncode != 0:
-        print(f"  ✗ Could not start the release pipeline: {result.stderr.strip()}")
-        print(f"    Start it manually: {' '.join(cmd)}")
-        return False
+    # GitHub intermittently answers the dispatch endpoint with HTTP 500
+    # ("Failed to run workflow dispatch") — e.g. 3 of 9 canary days in late
+    # Sep/early Oct 2026, with the identical command succeeding on retry
+    # minutes later. Retry transient 5xx with backoff; 4xx fails fast.
+    last_stderr = ""
+    for attempt in (1, 2, 3):
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", cwd=str(REPO_ROOT),
+        )
+        if result.returncode == 0:
+            print(f"  ✓ {workflow} started for {tag} (workflow from {dispatch_ref})")
+            return True
+        last_stderr = result.stderr.strip()
+        if "HTTP 5" not in last_stderr:
+            break
+        print(f"  … dispatch attempt {attempt} failed ({last_stderr}); retrying in 30s")
+        time.sleep(30)
 
-    print(f"  ✓ {workflow} started for {tag} (workflow from {dispatch_ref})")
-    return True
+    print(f"  ✗ Could not start the release pipeline: {last_stderr}")
+    print(f"    Start it manually: {' '.join(cmd)}")
+    return False
 
 
 def _default_branch(gh_repo: str | None) -> str | None:
