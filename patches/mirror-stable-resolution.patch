@@ -1,0 +1,75 @@
+diff --git a/hermes_cli/source_releases.py b/hermes_cli/source_releases.py
+index 8944a1198a..a31d6101bd 100644
+--- a/hermes_cli/source_releases.py
++++ b/hermes_cli/source_releases.py
+@@ -337,6 +337,49 @@ def _release_pointer(channel: str) -> tuple[str | None, str | None]:
+     return page.tags[0], None
+ 
+ 
++def _origin_is_github(git_cmd, cwd) -> bool:
++    """True when ``origin`` is a GitHub remote (mirrors are not, and own their tags)."""
++    result = _probe(git_cmd, cwd, "config", "--get", "remote.origin.url")
++    if result is None or result.returncode != 0:
++        return False
++    return bool(_GITHUB_ORIGIN.fullmatch(result.stdout.strip()))
++
++
++def _stable_tag_from_origin(git_cmd, cwd) -> tuple[str, str]:
++    """Newest strict semver tag on a mirror origin, with the commit it points at.
++
++    Annotated tags report the tag object on ``refs/tags/<t>`` and the commit on the
++    peeled ``^{}`` ref, so the peel wins; a lightweight tag has only the commit ref.
++    """
++    from hermes_cli.source_check import source_git_env
++
++    result = subprocess.run(
++        [*git_cmd, "ls-remote", "--tags", "origin", "refs/tags/v*"],
++        cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
++        check=True, timeout=60, stdin=subprocess.DEVNULL,
++        env=source_git_env(),
++    )
++    tags: dict[str, str] = {}
++    for line in result.stdout.splitlines():
++        parts = line.split()
++        if len(parts) != 2:
++            continue
++        sha, ref = parts
++        name = ref.removeprefix("refs/tags/")
++        peeled = name.endswith("^{}")
++        name = name.removesuffix("^{}")
++        if not STABLE_TAG_RE.fullmatch(name):
++            continue
++        if peeled:
++            tags[name] = sha
++        else:
++            tags.setdefault(name, sha)
++    if not tags:
++        raise ValueError("Mirror origin has no stable release tags")
++    tag = max(tags, key=lambda name: tuple(int(part) for part in name.removeprefix("v").split(".")))
++    return tag, tags[tag]
++
++
+ def _resolve_release(channel: str, git_cmd=None, cwd=None, *, repository=None,
+                      pointer: bool = True) -> tuple[str, str]:
+     """``resolve_source_release`` that raises the failure instead of returning ``(None, None)``."""
+@@ -347,8 +390,18 @@ def _resolve_release(channel: str, git_cmd=None, cwd=None, *, repository=None,
+     tag, pinned_sha = (_release_pointer(channel)
+                        if pointer and repository.lower() == OFFICIAL_REPOSITORY.lower() else (None, None))
+     if tag is None:
+-        release = _published_fallback(channel, base)
+-        tag = release["tag_name"]
++        try:
++            release = _published_fallback(channel, base)
++            tag = release["tag_name"]
++        except (OSError, ValueError) as exc:
++            # api.github.com is unreachable from some networks (regional blocks). A mirror
++            # origin that is not a GitHub remote carries the release tags itself, so the
++            # newest semver tag on origin IS the stable release there; GitHub verification
++            # is impossible anyway and a fork/GitHub origin keeps failing closed.
++            if channel != "stable" or git_cmd is None or _origin_is_github(git_cmd, cwd):
++                raise
++            logger.warning("GitHub release lookup failed (%s); using newest origin tag", exc)
++            return _stable_tag_from_origin(git_cmd, cwd)
+     else:
+         release = _json(f"{base}/releases/tags/{tag}")
+     if not _published(release, channel) or release["tag_name"] != tag:
